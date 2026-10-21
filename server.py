@@ -19,7 +19,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -49,6 +49,20 @@ def init_session_dir():
     os.makedirs(SESSION_DIR, exist_ok=True)
 
 
+def clean_code_fences(text: str) -> str:
+    """
+    If text is enclosed in markdown code fences (```lang ... ```), cleanly strip the fences.
+    """
+    trimmed = text.strip()
+    if trimmed.startswith("```") and trimmed.endswith("```"):
+        first_newline = trimmed.find("\n")
+        if first_newline != -1:
+            inner = trimmed[first_newline + 1 :]
+            if inner.endswith("```"):
+                return inner[:-3].strip("\r\n")
+    return text
+
+
 async def get_session_lock(session_key: str) -> asyncio.Lock:
     """Retrieve or create an async Lock for a given session key."""
     async with locks_guard:
@@ -68,9 +82,13 @@ async def run_omp(prompt: str, user_session: str | None = None, timeout: int = 1
         "--no-tools",
         "--mode=json",
         "--system-prompt",
-        "You are a helpful AI chat assistant. Answer the user prompt directly in plain text.",
+        (
+            "You are an expert AI assistant. Provide direct, high-quality, concise responses. "
+            "When asked for code, scripts, or files, output only the clean, working code directly. "
+            "Do not wrap whole code or file responses in markdown code block fences (no ```). "
+            "Do not include conversational chatter, preamble, or explanations unless specifically requested."
+        ),
     ]
-
     if user_session:
         omp_id = session_map.get(user_session)
         if omp_id:
@@ -147,6 +165,7 @@ async def run_omp(prompt: str, user_session: str | None = None, timeout: int = 1
     if not reply_text:
         reply_text = stdout.strip()
 
+    reply_text = clean_code_fences(reply_text)
     if user_session and discovered_session_id:
         session_map[user_session] = discovered_session_id
 
@@ -252,6 +271,10 @@ async def handle_prompt(request: Request):
             f"[INFO] Prompt completed in {duration}s"
             + (f" [session={user_session}]" if user_session else " [stateless]")
         )
+
+        raw_mode = payload.get("raw") is True or "text/plain" in request.headers.get("accept", "")
+        if raw_mode:
+            return Response(content=reply, media_type="text/plain; charset=utf-8")
 
         response_data = {"response": reply}
         if user_session:
