@@ -71,7 +71,12 @@ async def get_session_lock(session_key: str) -> asyncio.Lock:
         return session_locks[session_key]
 
 
-async def run_omp(prompt: str, user_session: str | None = None, timeout: int = 180):
+async def run_omp(
+    prompt: str,
+    user_session: str | None = None,
+    tools: str | None = "web_search",
+    timeout: int = 180,
+):
     """
     Execute omp subprocess asynchronously without blocking the event loop.
     Returns (reply_text, omp_session_id).
@@ -79,7 +84,6 @@ async def run_omp(prompt: str, user_session: str | None = None, timeout: int = 1
     cmd = [
         "omp",
         "-p",
-        "--no-tools",
         "--mode=json",
         "--system-prompt",
         (
@@ -89,6 +93,13 @@ async def run_omp(prompt: str, user_session: str | None = None, timeout: int = 1
             "Do not include conversational chatter, preamble, or explanations unless specifically requested."
         ),
     ]
+
+    if tools == "all":
+        cmd.append("--auto-approve")
+    elif tools and str(tools).lower() not in ("none", "false"):
+        cmd.extend([f"--tools={tools}", "--auto-approve"])
+    else:
+        cmd.append("--no-tools")
     if user_session:
         omp_id = session_map.get(user_session)
         if omp_id:
@@ -232,6 +243,7 @@ async def handle_prompt(request: Request):
     decoded_body = raw_body.decode("utf-8", errors="replace").strip()
     user_session = None
     raw_mode = "text/plain" in request.headers.get("accept", "")
+    payload = None
 
     try:
         payload = json.loads(decoded_body)
@@ -259,16 +271,22 @@ async def handle_prompt(request: Request):
     except json.JSONDecodeError:
         # Handle invalid JSON gracefully: use entire body as prompt
         prompt = decoded_body
+    tools_setting = "web_search"
+    if isinstance(payload, dict):
+        if payload.get("search") is False or payload.get("tools") is False:
+            tools_setting = "none"
+        elif "tools" in payload and isinstance(payload["tools"], str):
+            tools_setting = payload["tools"]
+
     start_time = time.time()
     try:
         if user_session:
             lock = await get_session_lock(user_session)
             async with lock:
-                reply, _ = await run_omp(prompt, user_session=user_session)
+                reply, _ = await run_omp(prompt, user_session=user_session, tools=tools_setting)
         else:
             # Completely unconstrained parallel execution for stateless requests
-            reply, _ = await run_omp(prompt, user_session=None)
-
+            reply, _ = await run_omp(prompt, user_session=None, tools=tools_setting)
         duration = round(time.time() - start_time, 2)
         print(
             f"[INFO] Prompt completed in {duration}s"

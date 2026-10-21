@@ -15,9 +15,10 @@ A high-performance asynchronous HTTP middle server built with **FastAPI** and **
 - **Zero Headers Required**: Accepts raw JSON bodies directly (no `Content-Type: application/json` required in `curl`).
 - **Flexible JSON Payload**:
   - `{"prompt": "..."}`: Pure stateless request (fully unconstrained parallelism).
-  - `{"prompt": "...", "session": "..."}`: Multi-turn session memory.
+- **Live Web Search**: Automatically enabled by default so the model can browse current information, recent news, and live documentation.
+- **Clean Code Output**: Automatically strips markdown code fences so code responses are directly usable.
+- **Graceful Body Fallback**: Accepts raw text or malformed JSON gracefully without 400 errors.
 - **Ephemeral Sessions**: All sessions and temporary context files are deleted when the server restarts.
-
 ---
 
 ## OMP Prerequisites & Setup
@@ -142,6 +143,24 @@ curl -d '{"prompt": "What is my favorite color?", "session": "chat123"}' http://
 ```
 
 ---
+
+### 4. Live Web Search
+
+Web search is **enabled by default** using OMP's built-in search tools:
+
+```bash
+curl -d '{"prompt": "search the web for the latest SpaceX launch update"}' http://localhost:8000/prompt
+```
+
+**Optional Controls:**
+- **Disable web search** (pure offline model):
+  ```json
+  {"prompt": "...", "search": false}
+  ```
+- **Enable all agent tools** (bash, filesystem, python):
+  ```json
+  {"prompt": "...", "tools": "all"}
+  ```
 
 ## Concurrency Model
 
