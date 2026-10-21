@@ -229,33 +229,36 @@ async def handle_prompt(request: Request):
             content={"error": "Request body must not be empty"},
         )
 
+    decoded_body = raw_body.decode("utf-8", errors="replace").strip()
+    user_session = None
+    raw_mode = "text/plain" in request.headers.get("accept", "")
+
     try:
-        payload = json.loads(raw_body.decode("utf-8", errors="replace"))
-    except json.JSONDecodeError as e:
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": f"Invalid JSON body: {e.msg}"},
-        )
+        payload = json.loads(decoded_body)
+        if isinstance(payload, dict):
+            extracted_prompt = (
+                payload.get("prompt")
+                or payload.get("message")
+                or payload.get("text")
+            )
+            if isinstance(extracted_prompt, str) and extracted_prompt.strip():
+                prompt = extracted_prompt.strip()
+            else:
+                prompt = decoded_body
 
-    if not isinstance(payload, dict):
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "JSON body must be an object"},
-        )
+            sess_val = payload.get("session")
+            if sess_val is not None:
+                user_session = str(sess_val).strip() or None
 
-    prompt = payload.get("prompt")
-    if not prompt or not isinstance(prompt, str) or not prompt.strip():
-        return JSONResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content={"error": "Missing or empty required field 'prompt'"},
-        )
-
-    user_session = payload.get("session")
-    if user_session is not None:
-        user_session = str(user_session).strip()
-        if not user_session:
-            user_session = None
-
+            if payload.get("raw") is True:
+                raw_mode = True
+        elif isinstance(payload, str) and payload.strip():
+            prompt = payload.strip()
+        else:
+            prompt = decoded_body
+    except json.JSONDecodeError:
+        # Handle invalid JSON gracefully: use entire body as prompt
+        prompt = decoded_body
     start_time = time.time()
     try:
         if user_session:
@@ -272,10 +275,8 @@ async def handle_prompt(request: Request):
             + (f" [session={user_session}]" if user_session else " [stateless]")
         )
 
-        raw_mode = payload.get("raw") is True or "text/plain" in request.headers.get("accept", "")
         if raw_mode:
             return Response(content=reply, media_type="text/plain; charset=utf-8")
-
         response_data = {"response": reply}
         if user_session:
             response_data["session"] = user_session

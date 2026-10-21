@@ -124,22 +124,34 @@ def test_suite():
         assert "BLUEBERRY" in data2["response"].upper()
         print("✓ Test 4 passed! Multi-turn session memory verified.")
 
-        print("\n--- Test 5: Error handling ---")
-        status, data = raw_post("/prompt", "{not-valid-json", headers={})
-        print(f"Invalid JSON -> Status: {status}, Response: {data}")
+        print("\n--- Test 5: Fallback Handling & Error Validation ---")
+        # 5a: Invalid JSON string is handled directly as prompt
+        status, data = raw_post("/prompt", "{invalid json: please say OK_FALLBACK", headers={})
+        print(f"Invalid JSON fallback -> Status: {status}, Response: {data}")
+        assert status == 200
+        assert "response" in data
+        assert "OK_FALLBACK" in data["response"]
+
+        # 5b: Plain text string without JSON
+        status, data = raw_post("/prompt", "Say exactly OK_RAW_BODY", headers={})
+        print(f"Plain text body -> Status: {status}, Response: {data}")
+        assert status == 200
+        assert "response" in data
+        assert "OK_RAW_BODY" in data["response"]
+
+        # 5c: Empty body returns 400
+        status, data = raw_post("/prompt", "", headers={})
+        print(f"Empty body -> Status: {status}, Response: {data}")
         assert status == 400
 
-        status, data = raw_post("/prompt", '{"session": "foo"}', headers={})
-        print(f"Missing prompt -> Status: {status}, Response: {data}")
-        assert status == 400
-
+        # 5d: Unknown route returns 404
         try:
             urllib.request.urlopen(f"{BASE_URL}/unknown_route")
             assert False, "Should have 404"
         except urllib.error.HTTPError as e:
             print(f"404 check -> Status: {e.code}")
             assert e.code == 404
-        print("✓ Test 5 passed! Error handling verified.")
+        print("✓ Test 5 passed! Fallback and error handling verified.")
 
         print("\n--- Test 6: Concurrent Multi-Session Requests ---")
         tasks = [
