@@ -15,7 +15,7 @@ A high-performance asynchronous HTTP middle server built with **FastAPI** and **
 - **Zero Headers Required**: Accepts raw JSON bodies directly (no `Content-Type: application/json` required in `curl`).
 - **Flexible JSON Payload**:
   - `{"prompt": "..."}`: Pure stateless request (fully unconstrained parallelism).
-- **Live Web Search**: Automatically enabled by default so the model can browse current information, recent news, and live documentation.
+- **All Tools Enabled by Default**: Web search, python, filesystem, and commands run automatically with `--auto-approve` without needing special prompt triggers.
 - **Clean Code Output**: Automatically strips markdown code fences so code responses are directly usable.
 - **Graceful Body Fallback**: Accepts raw text or malformed JSON gracefully without 400 errors.
 - **Ephemeral Sessions**: All sessions and temporary context files are deleted when the server restarts.
@@ -144,22 +144,23 @@ curl -d '{"prompt": "What is my favorite color?", "session": "chat123"}' http://
 
 ---
 
-### 4. Live Web Search
+### 4. Full Agent Tools & Web Search (Enabled by Default)
 
-Web search is **enabled by default** using OMP's built-in search tools:
+All built-in OMP tools (web search, Python execution, file reading, bash commands) are **active by default** with auto-approval. You don't need to specify tools in your prompt or request:
 
 ```bash
-curl -d '{"prompt": "search the web for the latest SpaceX launch update"}' http://localhost:8000/prompt
+# Searches web or fetches real-time data automatically
+curl -d '{"prompt": "Who won the 2024 Super Bowl?"}' http://localhost:8000/prompt
 ```
 
 **Optional Controls:**
-- **Disable web search** (pure offline model):
+- **Disable all tools** (pure offline model without tool execution):
   ```json
-  {"prompt": "...", "search": false}
+  {"prompt": "...", "tools": "none"}
   ```
-- **Enable all agent tools** (bash, filesystem, python):
+- **Enable specific tool subset**:
   ```json
-  {"prompt": "...", "tools": "all"}
+  {"prompt": "...", "tools": "web_search"}
   ```
 
 ## Concurrency Model

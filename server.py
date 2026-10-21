@@ -74,7 +74,7 @@ async def get_session_lock(session_key: str) -> asyncio.Lock:
 async def run_omp(
     prompt: str,
     user_session: str | None = None,
-    tools: str | None = "web_search",
+    tools: str | None = "all",
     timeout: int = 180,
 ):
     """
@@ -84,22 +84,19 @@ async def run_omp(
     cmd = [
         "omp",
         "-p",
+        "--auto-approve",
         "--mode=json",
-        "--system-prompt",
+        "--append-system-prompt",
         (
-            "You are an expert AI assistant. Provide direct, high-quality, concise responses. "
-            "When asked for code, scripts, or files, output only the clean, working code directly. "
-            "Do not wrap whole code or file responses in markdown code block fences (no ```). "
-            "Do not include conversational chatter, preamble, or explanations unless specifically requested."
+            "When asked for code, scripts, or single files, output the clean code directly "
+            "without markdown code block fences unless specifically requested."
         ),
     ]
 
-    if tools == "all":
-        cmd.append("--auto-approve")
-    elif tools and str(tools).lower() not in ("none", "false"):
-        cmd.extend([f"--tools={tools}", "--auto-approve"])
-    else:
+    if tools in ("none", "false", False):
         cmd.append("--no-tools")
+    elif tools and tools != "all":
+        cmd.append(f"--tools={tools}")
     if user_session:
         omp_id = session_map.get(user_session)
         if omp_id:
@@ -271,9 +268,9 @@ async def handle_prompt(request: Request):
     except json.JSONDecodeError:
         # Handle invalid JSON gracefully: use entire body as prompt
         prompt = decoded_body
-    tools_setting = "web_search"
+    tools_setting = "all"
     if isinstance(payload, dict):
-        if payload.get("search") is False or payload.get("tools") is False:
+        if payload.get("tools") is False or str(payload.get("tools")).lower() in ("none", "false"):
             tools_setting = "none"
         elif "tools" in payload and isinstance(payload["tools"], str):
             tools_setting = payload["tools"]
