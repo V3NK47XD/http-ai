@@ -1,60 +1,50 @@
-# OMP HTTP Middle Server
+# OMP HTTP Middle Server (FastAPI)
 
-A lightweight, zero-dependency Python HTTP server that exposes OMP (AI Coding Assistant / LLM Runner) over simple HTTP requests.
+A high-performance asynchronous HTTP middle server built with **FastAPI** and **Uvicorn** that exposes OMP (AI Coding Assistant / LLM Runner) over simple HTTP requests.
 
 ---
 
 ## Features
 
-- **Standard Library Only**: Built with Python's `http.server.ThreadingHTTPServer` (no `pip install` required).
-- **2 Clean Endpoints**:
+- **Built with FastAPI & Uvicorn**: Asynchronous ASGI server capable of high-throughput concurrent request handling.
+- **Concurrent Multi-Session Execution**: Non-blocking `asyncio` subprocess execution. Requests for different sessions or stateless prompts run in full parallel without blocking each other or the event loop.
+- **Race-Free Session State**: Lightweight per-session locks ensure requests to the *same* session are processed sequentially to prevent session file conflicts.
+- **2 Simple Endpoints**:
   - `GET` or `POST` `/ping` for health check.
   - `POST` `/prompt` for handling AI prompts.
-- **No Headers Required**: Takes JSON payload directly (no `Content-Type: application/json` required in `curl`).
+- **Zero Headers Required**: Accepts raw JSON bodies directly (no `Content-Type: application/json` required in `curl`).
 - **Flexible JSON Payload**:
-  - `{"prompt": "..."}`: Pure stateless request.
+  - `{"prompt": "..."}`: Pure stateless request (fully unconstrained parallelism).
   - `{"prompt": "...", "session": "..."}`: Multi-turn session memory.
-- **Ephemeral Sessions**: All sessions and temporary context files are deleted when the Python server restarts.
-- **Thread-safe & Concurrent**: Handles requests concurrently with per-session locking to ensure safe state transitions.
+- **Ephemeral Sessions**: All sessions and temporary context files are deleted when the server restarts.
 
 ---
 
 ## OMP Prerequisites & Setup
 
-Before running the Python middle server, ensure `omp` is installed, authenticated, and accessible in your environment.
+Before running the server, ensure `omp` is installed, authenticated, and accessible in your environment.
 
 ### 1. Verify OMP Installation
 Ensure the `omp` CLI is installed and in your system's `PATH`:
 ```bash
 omp --version
 ```
-*(If not installed, install OMP via your system package manager or installer, and ensure its directory is added to your `PATH`).*
 
 ### 2. Configure Model Credentials
-OMP needs access to at least one LLM provider. Configure authentication using one of the following methods:
-
+OMP needs access to at least one LLM provider:
 - **Option A: Interactive Login (Recommended)**
   ```bash
   omp login
   ```
-  Follow the terminal prompts to authenticate with your preferred provider (e.g., Google, OpenAI, Anthropic).
-
 - **Option B: Environment Variables**
-  Set the API key corresponding to your provider:
   ```bash
   # Windows PowerShell
-  $env:GEMINI_API_KEY = "your_key_here"
-  # or
-  $env:OPENAI_API_KEY = "your_key_here"
-  # or
-  $env:ANTHROPIC_API_KEY = "your_key_here"
+  $env:GEMINI_API_KEY = "your_key_here"   # or OPENAI_API_KEY, ANTHROPIC_API_KEY
 
-  # Linux / macOS / Bash
+  # Linux / macOS
   export GEMINI_API_KEY="your_key_here"
   ```
-
 - **Option C: Auth Broker / Auth Gateway**
-  If managing credentials centrally or exposing through an HTTP forward proxy:
   ```bash
   omp auth-gateway
   ```
@@ -64,19 +54,28 @@ Test that OMP responds in non-interactive print mode:
 ```bash
 omp -p --no-tools "say hello"
 ```
-If you see a direct response (e.g. `Hello!`), OMP is ready and you can start `server.py`.
 
 ---
 
 ## Quickstart
 
-### 1. Start Server
+### 1. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Start Server
 
 ```bash
 python server.py --port 8000
 ```
+Or directly via Uvicorn:
+```bash
+uvicorn server:app --host 0.0.0.0 --port 8000
+```
 
-*(Optional flags: `--host 0.0.0.0`, `--port 8000`, or via environment variables `PORT=8000 HOST=0.0.0.0`)*
+*(Configurable via `--host 0.0.0.0`, `--port 8000`, or environment variables `PORT=8000 HOST=0.0.0.0`)*
 
 ---
 
@@ -144,7 +143,30 @@ curl -d '{"prompt": "What is my favorite color?", "session": "chat123"}' http://
 
 ---
 
+## Concurrency Model
+
+```mermaid
+flowchart TD
+    Req1["Request 1 (Session A)"] --> L1["Session A Lock"] --> OMP1["Async OMP Process 1"]
+    Req2["Request 2 (Session B)"] --> L2["Session B Lock"] --> OMP2["Async OMP Process 2"]
+    Req3["Request 3 (Stateless)"] --> NoLock["Direct Parallel"] --> OMP3["Async OMP Process 3"]
+
+    subgraph EventLoop["FastAPI / Uvicorn Non-Blocking Event Loop"]
+      OMP1
+      OMP2
+      OMP3
+    end
+```
+
+- **Different Sessions**: Processed concurrently in parallel.
+- **Stateless Requests**: Completely lock-free, fully parallel.
+- **Same Session**: Queued sequentially per session ID to preserve conversation order and avoid session file corruption.
+
+---
+
 ## Running the Automated Test Suite
+
+Runs all 7 end-to-end tests including concurrency benchmarks:
 
 ```bash
 python test_server.py
