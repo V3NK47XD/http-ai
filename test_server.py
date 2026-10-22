@@ -71,7 +71,14 @@ def raw_post(path: str, body_str: str, headers: dict | None = None):
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = resp.read().decode("utf-8")
-            return resp.status, json.loads(data)
+            try:
+                parsed = json.loads(data)
+            except Exception:
+                parsed = {"response": data}
+            sess_header = resp.headers.get("X-Session-ID")
+            if sess_header and isinstance(parsed, dict) and "session" not in parsed:
+                parsed["session"] = sess_header
+            return resp.status, parsed
     except urllib.error.HTTPError as e:
         data = e.read().decode("utf-8")
         try:

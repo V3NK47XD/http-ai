@@ -15,8 +15,9 @@ A high-performance asynchronous HTTP middle server built with **FastAPI** and **
 - **Zero Headers Required**: Accepts raw JSON bodies directly (no `Content-Type: application/json` required in `curl`).
 - **Flexible JSON Payload**:
   - `{"prompt": "..."}`: Pure stateless request (fully unconstrained parallelism).
-- **All Tools Enabled by Default**: Web search, python, filesystem, and commands run automatically with `--auto-approve` without needing special prompt triggers.
-- **Clean Code Output**: Automatically strips markdown code fences so code responses are directly usable.
+- **Text File Response with Auto-Deletion**: Each response is written to a temporary `.txt` file with a unique random UUID filename, streamed directly as the response, and automatically deleted upon delivery.
+- **Multi-File Code Support**: When a coding solution requires multiple files, all files are returned within the single text file with explicit filename headers (`=== filename: path/to/file.ext ===`) for clean copy-pasting.
+- **All Tools Enabled by Default**: Web search, python, filesystem, and commands run automatically with `--auto-approve`.
 - **Graceful Body Fallback**: Accepts raw text or malformed JSON gracefully without 400 errors.
 - **Ephemeral Sessions**: All sessions and temporary context files are deleted when the server restarts.
 ---
@@ -95,21 +96,20 @@ curl http://localhost:8000/ping
 
 ---
 
-### 2. Stateless Prompt (`/prompt`)
+### 2. Prompt (`/prompt`)
 
-No extra headers needed, just send the JSON body:
+Prompt responses are streamed as temporary text files (`.txt`) and automatically deleted after sending:
 
 ```bash
 curl -d '{"prompt": "Explain quantum computing in one sentence"}' http://localhost:8000/prompt
 ```
 
-**Response:**
-```json
-{
-  "response": "Quantum computing uses quantum bits to perform calculations exponentially faster than classical computers for specific problems."
-}
+**Output (clean direct text response):**
+```
+Quantum computing uses quantum bits to perform calculations exponentially faster than classical computers for specific problems.
 ```
 
+*(Optionally, pass `curl -OJ -d '...'` to download the file directly with its random `.txt` name).*
 ---
 
 ### 3. Multi-Turn Session (`/prompt`)

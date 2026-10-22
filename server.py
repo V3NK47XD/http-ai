@@ -17,11 +17,13 @@ import os
 import shutil
 import sys
 import time
+import tempfile
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import BackgroundTasks, FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
 
 # Base directory for temporary session storage (wiped on startup and shutdown)
@@ -88,11 +90,15 @@ async def run_omp(
         "--mode=json",
         "--append-system-prompt",
         (
-            "When asked for code, scripts, or single files, output the clean code directly "
-            "without markdown code block fences unless specifically requested."
+            "You are an expert AI assistant and software engineer. Provide direct, production-ready responses.\n"
+            "When providing code solutions:\n"
+            "- If the solution requires multiple files, output all files in this single response.\n"
+            "- Clearly separate and label each file with its specific file path and filename header (e.g. '=== filename: path/to/file.ext ===') so the user can easily copy-paste each file.\n"
+            "- Output only the complete, working code for each file.\n"
+            "- Do not wrap whole file responses in markdown backticks (no ```) unless inside documentation.\n"
+            "- Avoid conversational filler, preamble, or apologies."
         ),
     ]
-
     if tools in ("none", "false", False):
         cmd.append("--no-tools")
     elif tools and tools != "all":
@@ -290,13 +296,46 @@ async def handle_prompt(request: Request):
             + (f" [session={user_session}]" if user_session else " [stateless]")
         )
 
-        if raw_mode:
-            return Response(content=reply, media_type="text/plain; charset=utf-8")
-        response_data = {"response": reply}
-        if user_session:
-            response_data["session"] = user_session
+        # Write response into a temporary text file with random filename
+        temp_filename = f"omp_resp_{uuid.uuid4().hex}.txt"
+        temp_filepath = os.path.join(tempfile.gettempdir(), temp_filename)
 
-        return JSONResponse(status_code=status.HTTP_200_OK, content=response_data)
+        with open(temp_filepath, "w", encoding="utf-8") as f:
+            f.write(reply)
+
+        def cleanup_temp_file(path: str):
+            """Delete the temporary response file after response is sent."""
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+
+        bg_tasks = BackgroundTasks()
+        bg_tasks.add_task(cleanup_temp_file, temp_filepath)
+
+        if isinstance(payload, dict) and payload.get("format") == "json":
+            cleanup_temp_file(temp_filepath)
+            response_data = {"response": reply}
+            if user_session:
+                response_data["session"] = user_session
+            return JSONResponse(status_code=status.HTTP_200_OK, content=response_data)
+
+        resp_headers = {
+            "X-Filename": temp_filename,
+            "Access-Control-Expose-Headers": "Content-Disposition, X-Filename",
+        }
+        if user_session:
+            resp_headers["X-Session-ID"] = user_session
+
+        return FileResponse(
+            path=temp_filepath,
+            media_type="text/plain; charset=utf-8",
+            filename=temp_filename,
+            content_disposition_type="inline",
+            background=bg_tasks,
+            headers=resp_headers,
+        )
 
     except TimeoutError as te:
         return JSONResponse(
